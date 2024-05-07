@@ -1,0 +1,497 @@
+---
+title: "Statistics 2 Assignment 2"
+author: "21002572"
+date: "7 May 2024"
+output:
+  html_document:
+    toc: true
+    df_print: paged
+  pdf_document:
+    toc: true
+  html_notebook:
+    toc: true
+css: style.css
+editor_options:
+  chunk_output_type: inline
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, eval = TRUE, message = FALSE, warning = FALSE, comment = NA)
+
+library(tidyverse)
+library(plotly)
+library(kableExtra)
+library(ggraph)
+library(igraph)
+library(tidyverse)
+library(tidygraph)
+library(ggnewscale) # ggnewscale needed for multiple colour scales
+```
+
+```{r read, include=FALSE}
+# load the data
+political_comms <- read.csv("political_comms.csv")
+political_extra <- read.csv("political_extra.csv")
+
+# make correction to politician name in order to create graph object
+political_comms[political_comms=="McFadder"] <- "McFadden"
+```
+
+## Main Findings
+
+-   Some high edge densities, particularly between Johnson and Truss
+-   Across the whole network, the scores for Patel and Dodds show they have the highest brokerage potential
+-   Starmer's betweenness scores indicate a high degree of cross-party communication
+-   When only debates are considered, Barclay and Wallace have the highest score
+-   When only phone calls are considered, Johnson scores very highly
+-   Gove and Lammy appear to have very low brokerage potential among female ministers
+-   Findings regarding the apparent low brokerage of female Opposition ministers among all male ministers should         probably be taken lightly, reflecting on the different gender balance within Government and Opposition.
+
+
+## Introduction
+
+The information considered in this report is a simulated dataset of communications between Government and Opposition ministers (or leaders / deputy leaders). There are 10 politicians in each grouping. To gain insight into this network information, the dataset will first be analysed as a whole network. Following this, it will be filtered to Government-inclusive data, Opposition-inclusive data, the type of communication, and the gender of the ministers to discover further insights into what this network data can tell us.
+
+## Results
+
+### Whole network
+
+```{r wholeprep, include=FALSE}
+# create undirected graph object
+political_graph <- graph_from_data_frame(
+  d = political_comms,
+  vertices = political_extra,
+  directed = FALSE
+)
+
+political_graph
+
+political_tdy <- as_tbl_graph(political_graph)
+```
+
+```{r Leiden prep, include=FALSE}
+# Leiden cluster at https://people.duke.edu/~jmoody77/snh/2021/CommunitiesSNH2021.nb.html
+
+set.seed(123)
+polcomp <- components(political_graph)
+
+polit <- decompose(political_graph)[[1]]
+
+cluster_leiden(polit)
+
+pol <- cluster_leiden(polit)
+
+```
+
+Figure 1 below is a Leiden cluster, produced via an algorithm to identify communities within networks. This cluster identifies a large community, 2 smaller communities, some overlap between, and 3 more isolated vertices. There are some interesting observations, such as high edge density between some ministers, particularly Johnson and Truss, and Johnson and Patel. On the whole, it is an extremely busy plot, reflecting high interconnectness between vertices and a very high number of edges.
+
+```{r Leiden, fig.cap="Figure 1 Leiden cluster"}
+
+plot(pol,polit)
+
+```
+
+In Figure 2 below, the whole network is shown, so using the same information as in Figure 1. The node colours have been formatted to show Government (Conservative) ministers in blue, and Opposition (Labour) ministers in red. Additionally, the text for female ministers is purple, while the text for male ministers is green. The varying node size indicates pagerank, and it can be seen that the pagerank for Johnson and Truss, for example, is high, while for Rayner and Lammy, for example, is low.
+
+```{r whole, fig.cap="Figure 2 whole network"}
+#Colour-coded blue = Government, red = Opposition
+political_tdy %>% 
+  activate(nodes) %>%
+  mutate(pagerank = centrality_pagerank()) %>%
+  activate(edges) %>%
+  mutate(betweenness = centrality_edge_betweenness()) %>%
+  ggraph() +
+  geom_edge_link(aes(alpha = betweenness)) +
+  geom_node_point(aes(size = pagerank, colour = Side)) +
+  #Need to define at least four values for a scale colour, so add two random values that will never be used
+  scale_colour_manual(breaks = c("Government","Opposition","value1","value2"), values = c("blue","red","black","white")) +
+  #Use ggnewscale to define a second scale colour
+  new_scale_color() +
+  geom_node_text(aes(label = name, colour = Gender), repel=TRUE) +
+  scale_colour_manual(breaks = c("male","female","Other1","Other2"), values = c("darkgreen","purple","blue","yellow"))
+```
+In the box below are the values of betweenness, as applied to the whole network. Betweenness relates the frequency that a vertex sits on the shortest path between 2 vertices. A vertex with a high betweenness score are important bridges in a network which are crucial to the movement of information between vertices. In this simulated dataset, it indicates that Patel (Government) and Dodds (Opposition) are the politicians with the highest brokerage potential.
+```{r bw_all, fig.cap="Table 1"}
+# Betweenness measures brokerage or gatekeeping potential. It is (approximately) 
+# the number of shortest paths between nodes that pass through a particular node.
+sort(betweenness(political_graph))
+```
+
+
+### Government-included networks
+
+```{r govinclprep, include=FALSE}
+# for graph object filtered to government-only comms
+all_government_comms <- union_all(
+  political_comms[political_comms$Source %in% political_extra$MP[political_extra$Side == "Government"], ],
+  political_comms[political_comms$Recipient %in% political_extra$MP[political_extra$Side == "Government"], ]
+)
+
+all_government_graph <- graph_from_data_frame(
+  d = all_government_comms,
+  vertices = political_extra,
+  directed = FALSE
+)
+
+all_government_graph
+
+all_government_tdy <- as_tbl_graph(all_government_graph)
+
+```
+
+For figure 3 below, the network information has been filtered to include only those edges which feature a Government (Conservative) minister, so a Government vertex must be the source, recipient or both.
+
+```{r govincl, fig.cap="Figure 3 government-inclusive network"}
+#Colour-coded blue = Government, red = Opposition
+all_government_tdy %>% 
+  activate(nodes) %>%
+  mutate(pagerank = centrality_pagerank()) %>%
+  activate(edges) %>%
+  mutate(betweenness = centrality_edge_betweenness()) %>%
+  ggraph() +
+  geom_edge_link(aes(alpha = betweenness)) +
+  geom_node_point(aes(size = pagerank, colour = Side)) +
+  #Need to define at least four values for a scale colour, so add two random values that will never be used
+  scale_colour_manual(breaks = c("Government","Opposition","value1","value2"), values = c("blue","red","black","white")) +
+  #Use ggnewscale to define a second scale colour
+  new_scale_color() +
+  geom_node_text(aes(label = name, colour = Gender), repel=TRUE) +
+  scale_colour_manual(breaks = c("male","female","Other1","Other2"), values = c("darkgreen","purple","blue","yellow"))
+```
+Naturally, as a result of this filtering, the Government vertices will be more central and larger, but the area of interest lies in the change of rankings. For example, Javid now has the second-highest betweenness score (see box below), suggesting that his networking is stronger within party rather than between parties. Starmer has the highest betweenness score among the Opposition vertices, indicating strong cross-party networking.
+```{r bw_govincl}
+# Betweenness measures brokerage or gatekeeping potential. It is (approximately) 
+# the number of shortest paths between nodes that pass through a particular node.
+sort(betweenness(all_government_graph))
+```
+
+
+```{r onlygovprep, include=FALSE}
+# for graph object filtered to government-only comms
+only_government_extra <- political_extra[political_extra$Side == "Government", ]
+
+only_government_comms <- political_comms[
+  political_comms$Source %in% only_government_extra$MP
+  &
+  political_comms$Recipient %in% only_government_extra$MP, 
+]
+
+
+only_government_graph <- graph_from_data_frame(
+  d = only_government_comms,
+  vertices = only_government_extra,
+  directed = FALSE
+)
+
+only_government_graph
+
+only_government_tdy <- as_tbl_graph(only_government_graph)
+```
+```{r onlygov, fig.cap="Figure 4 government-only network"}
+only_government_tdy %>% 
+  activate(nodes) %>%
+  mutate(pagerank = centrality_pagerank()) %>%
+  activate(edges) %>%
+  mutate(betweenness = centrality_edge_betweenness()) %>%
+  ggraph() +
+  geom_edge_link(aes(alpha = betweenness)) +
+  geom_node_point(aes(size = pagerank, colour = Side)) +
+  #Need to define at least four values for a scale colour, so add two random values that will never be used
+  scale_colour_manual(breaks = c("Government","Opposition","value1","value2"), values = c("blue","red","black","white")) +
+  #Use ggnewscale to define a second scale colour
+  new_scale_color() +
+  geom_node_text(aes(label = name, colour = Gender), repel=TRUE) +
+  scale_colour_manual(breaks = c("male","female","Other1","Other2"), values = c("darkgreen","purple","blue","yellow"))
+```
+For figure 4 above, and the box below, the information has been filtered to only Government network data (so where both the source and recipient are Government). In this, Johnson and Truss have the highest pagerank and betweenness scores, reflecting frequent communication between them that had been evident in Figure 1.
+```{r bw_onlygov}
+# Betweenness measures brokerage or gatekeeping potential. It is (approximately) 
+# the number of shortest paths between nodes that pass through a particular node.
+sort(betweenness(only_government_graph))
+```
+
+
+### Opposition-included networks
+
+```{r, oppinclprep, include=FALSE}
+# for graph object filtered to opposition-only comms
+all_opposition_comms <- union_all(
+  political_comms[political_comms$Source %in% political_extra$MP[political_extra$Side == "Opposition"], ],
+  political_comms[political_comms$Recipient %in% political_extra$MP[political_extra$Side == "Opposition"], ]
+)
+
+all_opposition_graph <- graph_from_data_frame(
+  d = all_opposition_comms,
+  vertices = political_extra,
+  directed = FALSE
+)
+
+all_opposition_graph
+
+all_opposition_tdy <- as_tbl_graph(all_opposition_graph)
+```
+
+For figure 5 below, the network information has been filtered to include only those edges which feature an Opposition (Labour) minister, so an Opposition vertex must be the source, recipient or both.
+```{r oppincl, fig.cap="Figure 5 opposition-inclusive network"}
+all_opposition_tdy %>% 
+  activate(nodes) %>%
+  mutate(pagerank = centrality_pagerank()) %>%
+  activate(edges) %>%
+  mutate(betweenness = centrality_edge_betweenness()) %>%
+  ggraph() +
+  geom_edge_link(aes(alpha = betweenness)) +
+  geom_node_point(aes(size = pagerank, colour = Side)) +
+  #Need to define at least four values for a scale colour, so add two random values that will never be used
+  scale_colour_manual(breaks = c("Government","Opposition","value1","value2"), values = c("blue","red","black","white")) +
+  #Use ggnewscale to define a second scale colour
+  new_scale_color() +
+  geom_node_text(aes(label = name, colour = Gender), repel=TRUE) +
+  scale_colour_manual(breaks = c("male","female","Other1","Other2"), values = c("darkgreen","purple","blue","yellow"))
+```
+
+Within this grouping, Starmer has the highest betweenness score (see box below), having previously been 4th among Opposition vertices in the whole network, reinforcing his high degree of cross-party networking as well as within-party communication. Comparatively, Dodds has moved from 1st to 5th among Opposition vertices in betweenness, suggesting that she doesn’t have the same breadth of networking as other Opposition colleagues.
+
+```{r bw_oppincl}
+# Betweenness measures brokerage or gatekeeping potential. It is (approximately) 
+# the number of shortest paths between nodes that pass through a particular node.
+sort(betweenness(all_opposition_graph))
+```
+
+```{r onlyoppprep, include=FALSE}
+# for graph object filtered to opposition-only comms
+only_opposition_extra <- political_extra[political_extra$Side == "Opposition", ]
+
+only_opposition_comms <- political_comms[
+  political_comms$Source %in% only_opposition_extra$MP
+  &
+    political_comms$Recipient %in% only_opposition_extra$MP, 
+]
+
+only_opposition_graph <- graph_from_data_frame(
+  d = only_opposition_comms,
+  vertices = only_opposition_extra,
+  directed = FALSE
+)
+
+only_opposition_graph
+
+only_opposition_tdy <- as_tbl_graph(only_opposition_graph)
+```
+
+For figure 6, below, the information has been filtered to only Opposition network data (so where both the source and recipient are Opposition). In this, and the betweenness box below, it becomes apparent that Dodds’ and McFadden’s brokerage potential lies within-party rather than cross-party. 
+```{r onlyopp, fig.cap="Figure 6 opposition-only network"}
+only_opposition_tdy %>% 
+  activate(nodes) %>%
+  mutate(pagerank = centrality_pagerank()) %>%
+  activate(edges) %>%
+  mutate(betweenness = centrality_edge_betweenness()) %>%
+  ggraph() +
+  geom_edge_link(aes(alpha = betweenness)) +
+  geom_node_point(aes(size = pagerank, colour = Side)) +
+  #Need to define at least four values for a scale colour, so add two random values that will never be used
+  scale_colour_manual(breaks = c("Government","Opposition","value1","value2"), values = c("blue","red","black","white")) +
+  #Use ggnewscale to define a second scale colour
+  new_scale_color() +
+  geom_node_text(aes(label = name, colour = Gender), repel=TRUE) +
+  scale_colour_manual(breaks = c("male","female","Other1","Other2"), values = c("darkgreen","purple","blue","yellow"))
+```
+
+
+```{r bw_onlyopp}
+# Betweenness measures brokerage or gatekeeping potential. It is (approximately) 
+# the number of shortest paths between nodes that pass through a particular node.
+sort(betweenness(only_opposition_graph))
+
+```
+
+
+### Type of communication
+
+The simulated dataset included information relating to 83 debates, 98 phone calls, and 17 emails. It would be useful to look more closely at the information filtered only to debates and to phone calls.
+```{r debateprep, include=FALSE}
+# for graph object filtered to debate-only comms
+all_debate_comms <- political_comms[political_comms$Type == 'debate', ]
+
+all_debate_graph <- graph_from_data_frame(
+  d =all_debate_comms,
+  vertices = political_extra,
+  directed = FALSE
+)
+
+all_debate_graph
+
+all_debate_tdy <- as_tbl_graph(all_debate_graph)
+```
+
+
+```{r debate, fig.cap="Figure 7 debate-only network"}
+all_debate_tdy %>% 
+  activate(nodes) %>%
+  mutate(pagerank = centrality_pagerank()) %>%
+  activate(edges) %>%
+  mutate(betweenness = centrality_edge_betweenness()) %>%
+  ggraph() +
+  geom_edge_link(aes(alpha = betweenness)) +
+  geom_node_point(aes(size = pagerank, colour = Side)) +
+  #Need to define at least four values for a scale colour, so add two random values that will never be used
+  scale_colour_manual(breaks = c("Government","Opposition","value1","value2"), values = c("blue","red","black","white")) +
+  #Use ggnewscale to define a second scale colour
+  new_scale_color() +
+  geom_node_text(aes(label = name, colour = Gender), repel=TRUE) +
+  scale_colour_manual(breaks = c("male","female","Other1","Other2"), values = c("darkgreen","purple","blue","yellow"))
+```
+
+When considering figure 7 above, exclusively relating to debates, Barclay and Wallace (both Government) have the highest betweenness scores. Comparatively, the highest Opposition ministers are Reeves and McFadden (4th and 7th in betweenness, respectively). On the whole, Government ministers have higher rankings in this particular grouping, as evident from the betweenness scores, below.
+```{r bw_debate}
+# Betweenness measures brokerage or gatekeeping potential. It is (approximately) 
+# the number of shortest paths between nodes that pass through a particular node.
+sort(betweenness(all_debate_graph))
+
+```
+
+
+```{r phoneprep, include=FALSE}
+# for graph object filtered to phone-only comms
+all_phone_comms <- political_comms[political_comms$Type == 'phone', ]
+
+all_phone_graph <- graph_from_data_frame(
+  d =all_phone_comms,
+  vertices = political_extra,
+  directed = FALSE
+)
+
+all_phone_graph
+
+all_phone_tdy <- as_tbl_graph(all_phone_graph)
+```
+
+
+```{r phone, fig.cap="Figure 8 phone-only network"}
+all_phone_tdy %>% 
+  activate(nodes) %>%
+  mutate(pagerank = centrality_pagerank()) %>%
+  activate(edges) %>%
+  mutate(betweenness = centrality_edge_betweenness()) %>%
+  ggraph() +
+  geom_edge_link(aes(alpha = betweenness)) +
+  geom_node_point(aes(size = pagerank, colour = Side)) +
+  #Need to define at least four values for a scale colour, so add two random values that will never be used
+  scale_colour_manual(breaks = c("Government","Opposition","value1","value2"), values = c("blue","red","black","white")) +
+  #Use ggnewscale to define a second scale colour
+  new_scale_color() +
+  geom_node_text(aes(label = name, colour = Gender), repel=TRUE) +
+  scale_colour_manual(breaks = c("male","female","Other1","Other2"), values = c("darkgreen","purple","blue","yellow"))
+```
+
+Considering now a filtered network with just phone call data, in figure 8 above, Johnson ranks very highly in brokerage potential (see betweenness scores below). It is Opposition ministers with the next highest scores, with Dodds, Mahmood and Starmer in 2nd, 3rd and 4th scores respectively in betweenness.
+
+```{r bw_phone}
+# Betweenness measures brokerage or gatekeeping potential. It is (approximately) 
+# the number of shortest paths between nodes that pass through a particular node.
+sort(betweenness(all_phone_graph))
+
+```
+
+
+### Analysis using gender
+
+Another interesting grouping to consider is in relation to gender, and what can be interpreted about the network through a gender lens. For figure 9 below, the network information has been filtered to include only those edges which feature a female minister, so a female vertex must be the source, recipient or both. 
+```{r femaleprep, include=FALSE}
+# for graph object filtered to female-only comms (source or recipient)
+all_female_comms <- union_all(
+  political_comms[political_comms$Source %in% political_extra$MP[political_extra$Gender == "female"], ],
+  political_comms[political_comms$Recipient %in% political_extra$MP[political_extra$Gender == "female"], ]
+)
+
+all_female_graph <- graph_from_data_frame(
+  d = all_female_comms,
+  vertices = political_extra,
+  directed = FALSE
+)
+
+all_female_graph
+
+all_female_tdy <- as_tbl_graph(all_female_graph)
+```
+
+
+```{r female, fig.cap="Figure 9 female-inclusive network"}
+all_female_tdy %>% 
+  activate(nodes) %>%
+  mutate(pagerank = centrality_pagerank()) %>%
+  activate(edges) %>%
+  mutate(betweenness = centrality_edge_betweenness()) %>%
+  ggraph() +
+  geom_edge_link(aes(alpha = betweenness)) +
+  geom_node_point(aes(size = pagerank, colour = Side)) +
+  #Need to define at least four values for a scale colour, so add two random values that will never be used
+  scale_colour_manual(breaks = c("Government","Opposition","value1","value2"), values = c("blue","red","black","white")) +
+  #Use ggnewscale to define a second scale colour
+  new_scale_color() +
+  geom_node_text(aes(label = name, colour = Gender), repel=TRUE) +
+  scale_colour_manual(breaks = c("male","female","Other1","Other2"), values = c("darkgreen","purple","blue","yellow"))
+```
+
+With figure 9 above, and the betweenness scores below, it is most interesting to consider the vertices with the lowest betweenness scores. For both Gove (Government) and Lammy (Opposition), their scores are 0.00, suggesting they have very low brokerage potential with female colleagues, whether within- or cross-party. Comparatively, Johnson has the highest score among male politicians.
+```{r bw_female}
+# Betweenness measures brokerage or gatekeeping potential. It is (approximately) 
+# the number of shortest paths between nodes that pass through a particular node.
+sort(betweenness(all_female_graph))
+
+```
+
+For figure 10 below, the network information has been filtered to include only those edges which feature a male minister, so a male vertex must be the source, recipient or both. 
+```{r maleprep, include=FALSE}
+# for graph object filtered to male-only comms (source or recipient)
+
+all_male_comms <- union_all(
+  political_comms[political_comms$Source %in% political_extra$MP[political_extra$Gender == "male"], ],
+  political_comms[political_comms$Recipient %in% political_extra$MP[political_extra$Gender == "male"], ]
+)
+
+all_male_comms
+
+all_male_graph <- graph_from_data_frame(
+  d = all_male_comms,
+  vertices = political_extra,
+  directed = FALSE
+)
+
+all_male_graph
+
+all_male_tdy <- as_tbl_graph(all_male_graph)
+```
+
+```{r male, fig.cap="Figure 10 male-inclusive network"}
+all_male_tdy %>% 
+  activate(nodes) %>%
+  mutate(pagerank = centrality_pagerank()) %>%
+  activate(edges) %>%
+  mutate(betweenness = centrality_edge_betweenness()) %>%
+  ggraph() +
+  geom_edge_link(aes(alpha = betweenness)) +
+  geom_node_point(aes(size = pagerank, colour = Side)) +
+  #Need to define at least four values for a scale colour, so add two random values that will never be used
+  scale_colour_manual(breaks = c("Government","Opposition","value1","value2"), values = c("blue","red","black","white")) +
+  #Use ggnewscale to define a second scale colour
+  new_scale_color() +
+  geom_node_text(aes(label = name, colour = Gender), repel=TRUE) +
+  scale_colour_manual(breaks = c("male","female","Other1","Other2"), values = c("darkgreen","purple","blue","yellow"))
+```
+
+With figure 10 above, and the betweenness scores below, it is again most interesting to consider the vertices with the lowest betweenness scores. Here, the five lowest-scoring vertices are Opposition ministers, indicating low brokerage potential with male colleagues. Comparatively, Patel has the highest score among female politicians.
+
+There is, of course, a caveat to consider with this analysis, in that 6 of 10 Opposition ministers in this dataset are female, compared with only 2 of 10 Government ministers. Thus a low ranking here for a female Opposition minister whose networking is largely within-party, is to be expected.
+
+```{r bw_male}
+# Betweenness measures brokerage or gatekeeping potential. It is (approximately) 
+# the number of shortest paths between nodes that pass through a particular node.
+sort(betweenness(all_male_graph))
+
+```
+
+## Conclusions
+
+In conclusion, by delving into filtered versions of the network data, and considering both the network plots and betweenness scores in particular, it has been interesting to discover additional insights into the information provided in the dataset. It would have been interesting to have further information, such as what each ministers portfolio was, or to also include more junior minister data, in order to be able to conduct more analysis.
